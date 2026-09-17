@@ -3,3 +3,9 @@
 /.comet/*
 !/.comet/config.yaml
 # <<< Comet managed project state <<<
+
+/bin/
+*.exe
+vendor/
+.idea/
+.vscode/
