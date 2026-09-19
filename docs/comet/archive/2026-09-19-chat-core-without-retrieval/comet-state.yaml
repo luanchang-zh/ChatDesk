@@ -1,0 +1,249 @@
+schema: comet.native.v4
+name: chat-core-without-retrieval
+language: zh-CN
+phase: archive
+status: done
+state_version: 17
+brief: brief.md
+shape_confirmation_hash: b1a4754b71bbbb0474cf05030c25053fda506807d2b813de16beeaa1d977f3d6
+spec_changes:
+  - capability: chat-core
+    operation: create
+    source: specs/chat-core/spec.md
+workspace:
+  isolation: current
+  change_branch: main
+  target_branch: main
+  finish: null
+loop:
+  stage: done
+  goal_cycle: 2
+  iteration: 2
+  attempt: 2
+  retry_epoch: 0
+  failed_iteration_count: 0
+  no_progress_count: 0
+  execution_failure_count: 0
+  previous_unresolved_ids: []
+  next_action: null
+acceptance:
+  - id: A1
+    source: brief.md
+    text: A1：空 PostgreSQL 数据库能通过版本化迁移创建 users / conversations；重复 up 不重复建表；隔离测试库中
+      down 再 up 可成功。
+    result: passed
+    reason:
+      text: Runtime go-test 中 TestPostgresConversationPersistence 为 PASS 而非 SKIP：隔离库
+        goose Up、二次 Up 应用数为 0、Down 再 Up。00001_conversations.sql 创建
+        users/conversations。
+      truncated: false
+  - id: A2
+    source: brief.md
+    text: A2：显式启用开发身份并配置有效 UUID 后，服务端初始化该用户且只允许回环监听；关闭身份时业务接口返回未认证，健康检查仍可用。
+    result: passed
+    reason:
+      text: 开启开发身份后默认回环监听并 EnsureUser；关闭时业务接口未认证，/health 仍公开。配置与路由测试通过。
+      truncated: false
+  - id: A3
+    source: brief.md
+    text: A3：客户端伪造 user_id、身份 Header 或转发头不能切换用户；开发入口拒绝非回环连接及跨站来源，防止网页借本地开发身份操作数据。
+    result: passed
+    reason:
+      text: 身份只来自回环 RemoteAddr、回环 Host 与同源 Origin；不读 body/query/伪造 Header。伪造 user_id
+        与跨站来源测试通过。
+      truncated: false
+  - id: A4
+    source: brief.md
+    text: A4：会话可新建、列表、按 ID 打开、重命名、删除；空列表为数组；重新创建服务或数据库连接后仍读到已提交数据。
+    result: passed
+    reason:
+      text: 集成测试覆盖创建、列表、Get、Rename、Delete 与重连后仍读到已提交数据；HTTP 空列表为数组。
+      truncated: false
+  - id: A5
+    source: brief.md
+    text: A5：两个可信身份只能访问各自会话；对他人会话 Get / Rename / Delete 均返回与不存在一致的业务结果，写入不会改变他人数据。
+    result: passed
+    reason:
+      text: SQL 均带 user_id；用户 b 对 a 的 Get/Rename/Delete 均为资源不存在，a 的数据不变。
+      truncated: false
+  - id: A6
+    source: brief.md
+    text: A6：非法 UUID、非法标题和未支持的项目关联有明确业务错误；业务失败沿用 HTTP 200
+      信封，数据库故障沿用服务端错误规则，不向客户端泄漏驱动原文。
+    result: passed
+    reason:
+      text: 非法 UUID、标题与非空 project_id 有业务错误；业务失败 HTTP 200；库故障信封不泄漏驱动原文。
+      truncated: false
+  - id: A7
+    source: brief.md
+    text: A7：启动使用真实仓储；缺少 DSN、数据库不可达或迁移未执行时明确失败且不打印 DSN；迁移由独立命令执行，不隐式改动数据库；关闭时释放连接池。
+    result: passed
+    reason:
+      text: 启动注入真实仓储，Open 只探表不 migrate；缺 DSN/不可达/未迁移明确失败且不打印 DSN；关闭释放连接池。
+      truncated: false
+  - id: A8
+    source: brief.md
+    text: A8：提交可重现的 sqlc 配置、生成代码、启动/迁移示例与测试；真实 PostgreSQL 下迁移、CRUD、隔离测试通过，Go
+      测试与静态检查通过。
+    result: passed
+    reason:
+      text: sqlc 配置与生成代码存在（生成器英文头未手改）。go-test 全量通过且实库集成 PASS；go-vet 通过。
+      truncated: false
+builder_handoff:
+  candidate_id: 45a6c91c-977a-43ef-87d8-c18ae842e808
+  identity_provider: skill-coordinated
+  builder_execution_ref: skill-coordinated:builder:68af039c-3682-42ec-a377-e28714b52455
+  iteration: 2
+  summary:
+    text: 本轮只改注释：手写 Go/SQL 中的英文注释改为中文，并为会话 service、仓储、开发身份、迁移入口和会话 handle
+      补了说明。行为与验收项未改。go test ./... 与 go vet ./... 通过。
+    truncated: false
+  addressed_acceptance_ids:
+    - A1
+    - A2
+    - A3
+    - A4
+    - A5
+    - A6
+    - A7
+    - A8
+  checks:
+    - name:
+        text: go test ./...
+        truncated: false
+      result: passed
+      note:
+        text: 注释修改后全量包通过
+        truncated: false
+    - name:
+        text: go vet ./...
+        truncated: false
+      result: passed
+      note: null
+  checks_truncated: false
+  known_limits:
+    - text: sqlc 生成文件仍保留生成器英文头，不手改
+      truncated: false
+    - text: 本轮无行为变化；开发身份不是生产认证
+      truncated: false
+  known_limits_truncated: false
+  review: null
+  submitted_at: 2026-09-19T11:27:12.871Z
+blockers: []
+verification:
+  candidate_id: 45a6c91c-977a-43ef-87d8-c18ae842e808
+  identity_provider: skill-coordinated
+  verifier_execution_ref: skill-coordinated:verifier:b2cac13c-0ce4-4bc9-8e1a-cd9b0adc816b
+  iteration: 2
+  attempt: 2
+  assurance: skill-coordinated
+  verdict: pass
+  checks:
+    - id: go-test
+      name:
+        text: go test ./... -count=1 -v
+        truncated: false
+      argv_display:
+        - text: test
+          truncated: false
+        - text: ./...
+          truncated: false
+        - text: -count=1
+          truncated: false
+        - text: -v
+          truncated: false
+      argv_truncated: false
+      cwd_ref: .
+      status: passed
+      exit_code: 0
+      duration_ms: 21401
+    - id: go-vet
+      name:
+        text: go vet ./...
+        truncated: false
+      argv_display:
+        - text: vet
+          truncated: false
+        - text: ./...
+          truncated: false
+      argv_truncated: false
+      cwd_ref: .
+      status: passed
+      exit_code: 0
+      duration_ms: 1856
+  summary:
+    text: 本轮只改中文注释，行为未变。独立核对实现、测试与 Runtime 日志后，A1–A8 全部通过。go-test 中
+      TestPostgresConversationPersistence 为 PASS，go-vet 通过。
+    truncated: false
+  risks:
+    - text: 本机开发身份不是生产认证，只约束回环与来源。
+      truncated: false
+    - text: 已配置 CHATDESK_TEST_ADMIN_DSN 但库不可达时，集成测试会失败而不是 SKIP。
+      truncated: false
+    - text: 运行期库故障的 cause 会进入访问日志，HTTP 信封不泄漏驱动原文。
+      truncated: false
+  risks_truncated: false
+  completed_at: 2026-09-19T11:43:31.209Z
+history:
+  - goal_cycle: 1
+    iteration: 1
+    attempt: 0
+    outcome: recovery
+    unresolved_ids: []
+    summary:
+      text: Native Shape artifacts changed
+      truncated: false
+    completed_at: 2026-09-19T07:34:46.311Z
+  - goal_cycle: 2
+    iteration: 1
+    attempt: 1
+    outcome: pass
+    unresolved_ids: []
+    summary:
+      text: 补跑 Runtime 日志确认真实 PostgreSQL 集成测试 PASS，迁移、CRUD、隔离与重连验收成立；结合单元/HTTP 测试与
+        go-vet，A1–A8 全部通过。
+      truncated: false
+    completed_at: 2026-09-19T07:57:51.593Z
+  - goal_cycle: 2
+    iteration: 1
+    attempt: 1
+    outcome: recovery
+    unresolved_ids: []
+    summary:
+      text: 用户要求把英文注释改成中文并补充说明，验收标准不变，回到 Build 改注释。
+      truncated: false
+    completed_at: 2026-09-19T11:23:10.080Z
+  - goal_cycle: 2
+    iteration: 2
+    attempt: 1
+    outcome: execution-error
+    unresolved_ids: []
+    summary:
+      text: "Native Verifier response was invalid: Native verification cannot pass
+        before every required check succeeds"
+      truncated: false
+    completed_at: 2026-09-19T11:31:30.853Z
+  - goal_cycle: 2
+    iteration: 2
+    attempt: 2
+    outcome: pass
+    unresolved_ids: []
+    summary:
+      text: 本轮只改中文注释，行为未变。独立核对实现、测试与 Runtime 日志后，A1–A8 全部通过。go-test 中
+        TestPostgresConversationPersistence 为 PASS，go-vet 通过。
+      truncated: false
+    completed_at: 2026-09-19T11:43:31.209Z
+history_overflow:
+  dropped_entries: 0
+  first_dropped_at: null
+  last_dropped_at: null
+  outcome_counts:
+    pass: 0
+    fail: 0
+    blocked: 0
+    execution-error: 0
+    recovery: 0
+verification_result: pass
+verification_report: verification.md
+archived: true
+created_at: 2026-09-19T06:35:01.677Z
