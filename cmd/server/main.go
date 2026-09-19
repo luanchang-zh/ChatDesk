@@ -10,31 +10,52 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/luanchang-zh/ChatDesk/internal/config"
+	"github.com/luanchang-zh/ChatDesk/internal/database"
+	"github.com/luanchang-zh/ChatDesk/internal/repository"
 	"github.com/luanchang-zh/ChatDesk/internal/router"
 	v1 "github.com/luanchang-zh/ChatDesk/internal/router/v1"
 	"github.com/luanchang-zh/ChatDesk/internal/service"
 	"github.com/luanchang-zh/ChatDesk/pkg/logger"
 )
 
-// main 只做进程级编排，不写业务：
-//  1. 读配置；
-//  2. 初始化日志（失败时 logger 还不可用，只能写 stderr）；
-//  3. 注入领域服务（当前是占位实现）；
-//  4. 监听信号，先停 HTTP 入口再退出。
 func main() {
-	// 1. 环境变量 → Config。DSN 未配也能启动，方便先调 HTTP 信封。
-	cfg := config.Load()
+	if err := run(); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+}
+
+func run() error {
+	// 1. 环境变量 → Config。DSN 未配、开发身份不合法都会在这里失败。
+	cfg, err := config.Load()
+	if err != nil {
+		return err
+	}
 
 	// 2. 日志必须在其它业务之前就绪。级别非法时 InitConsole 内部回退 info。
 	if err := logger.InitConsole(cfg.LogLevel); err != nil {
-		fmt.Fprintf(os.Stderr, "初始化日志失败: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("初始化日志失败: %w", err)
 	}
 
-	// 3. 组装 HTTP。会话 handle 只拿接口，下一轮换成 sqlc 实现时改这一行即可。
-	conversations := service.UnavailableConversations{}
-	engine := router.NewEngine(v1.NewHealthHandler(), v1.NewConversationHandler(conversations))
+	// 3. 连库、探表，必要时幂等写入开发用户。失败文案不带 DSN。
+	startupCtx, startupCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer startupCancel()
+	pool, err := database.Open(startupCtx, cfg.PostgresDSN)
+	if err != nil {
+		return err
+	}
+	defer pool.Close()
+	store := repository.NewConversations(pool)
+	if cfg.DevAuthEnabled {
+		if err := store.EnsureUser(startupCtx, uuid.MustParse(cfg.DevUserID)); err != nil {
+			return errors.New("初始化开发用户失败，请检查数据库权限与结构")
+		}
+	}
+	startupCancel()
+	conversations := service.NewConversations(store)
+	engine := router.NewEngine(v1.NewHealthHandler(), v1.NewConversationHandler(conversations), cfg.DevUserID)
 	server := &http.Server{
 		Addr:              cfg.HTTPAddr,
 		Handler:           engine,
@@ -50,6 +71,7 @@ func main() {
 		logger.String("address", cfg.HTTPAddr),
 		logger.String("log_level", cfg.LogLevel),
 		logger.Bool("postgres_dsn_set", cfg.PostgresConfigured()),
+		logger.Bool("dev_auth_enabled", cfg.DevAuthEnabled),
 	)
 
 	runErrCh := make(chan error, 1)
@@ -61,8 +83,7 @@ func main() {
 	case err := <-runErrCh:
 		// ListenAndServe 在 Shutdown 后会返回 ErrServerClosed，这是正常退出。
 		if err != nil && !errors.Is(err, http.ErrServerClosed) {
-			logger.WithCtx(context.Background()).Error("HTTP 服务运行失败", logger.ErrorField("error", err))
-			os.Exit(1)
+			return fmt.Errorf("HTTP 服务运行失败: %w", err)
 		}
 	case <-ctx.Done():
 		logger.WithCtx(context.Background()).Warn("收到退出信号，开始关闭 HTTP 服务")
@@ -72,7 +93,8 @@ func main() {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if err := server.Shutdown(shutdownCtx); err != nil && !errors.Is(err, context.Canceled) {
-		logger.WithCtx(context.Background()).Error("关闭 HTTP 服务失败", logger.ErrorField("error", err))
-		os.Exit(1)
+		_ = server.Close()
+		return fmt.Errorf("关闭 HTTP 服务失败: %w", err)
 	}
+	return nil
 }

@@ -41,7 +41,7 @@ func SetTraceID(c *gin.Context, traceID string) string {
 	return setGinString(c, KeyTraceID, traceID)
 }
 
-// SetUserUUID 把当前用户放进 Gin。鉴权中间件接上后再用。
+// SetUserUUID 把当前用户放进 Gin。开发身份中间件写入后再拷到标准 context。
 func SetUserUUID(c *gin.Context, userUUID string) string {
 	return setGinString(c, KeyUserUUID, userUUID)
 }

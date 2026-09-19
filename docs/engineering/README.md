@@ -9,5 +9,8 @@
 | [error-handling.md](./error-handling.md) | 业务码、result.Fail / FailServer |
 | [logging.md](./logging.md) | logger.WithCtx / logger.Error 用法 |
 | [config.md](./config.md) | 环境变量：HTTP / DSN / 日志级别 |
+| [database.md](./database.md) | 数据库迁移、开发身份、会话接口与测试命令 |
+
+[chat-core-roadmap.md](./chat-core-roadmap.md) 是后续完整聊天路线草案，不代表当前已实现范围。
 
 产品需求、技术栈、系统架构仍在 `docs/total/`。这里只补「代码怎么写、为什么不能改回去」。

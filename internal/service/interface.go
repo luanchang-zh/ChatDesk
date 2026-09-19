@@ -13,7 +13,7 @@ import (
 //  2. 禁止出现 *gin.Context：service 不能绑定 HTTP、不能写信封、不能读 Header；
 //  3. 入参用 domain 的 Input 结构，不要把 HTTP DTO 漏进这一层。
 //
-// 当前实现是 Unavailable* 占位。下一轮 sqlc 仓储接上后，只换 main 里的注入，handle 不用改。
+// Conversation 已连接真实仓储，其余服务尚未接入。
 
 // ProjectService 项目管理。
 // 修改说明只影响后续 Run，不回头改已经完成的回答；删除有关联会话时由实现层决定是否拒绝。
@@ -31,13 +31,13 @@ type ProjectService interface {
 }
 
 // ConversationService 会话管理。
-// handle 列会话、以后新建 / 打开 / 重命名 / 删除都走这里。
+// handle 的新建 / 列表 / 打开 / 重命名 / 删除都走这里。
 type ConversationService interface {
-	// Create 新建会话。Title 可空，由后续首条消息再命名。
+	// Create 新建会话。Title 可空，默认“新会话”；用户来自可信 Context。
 	Create(ctx context.Context, in domain.CreateConversationInput) (*domain.Conversation, error)
 	// Get 按 ID 打开会话。刷新页面后要能靠这个恢复。
 	Get(ctx context.Context, id string) (*domain.Conversation, error)
-	// List 列出会话。ProjectID 空表示不按项目过滤。当前占位实现会返回 CodeServiceUnavailable。
+	// List 列出当前用户会话。当前只支持空 ProjectID。
 	List(ctx context.Context, in domain.ListConversationsInput) ([]domain.Conversation, error)
 	// Rename 重命名，不改历史消息。
 	Rename(ctx context.Context, in domain.RenameConversationInput) (*domain.Conversation, error)

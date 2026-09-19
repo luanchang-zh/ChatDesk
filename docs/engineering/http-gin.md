@@ -22,7 +22,7 @@ internal/middleware/            Recovery / Trace / 访问日志
 2. `Trace`：生成或透传 `X-Request-ID`
 3. `GinLogger`：请求结束打一条访问日志
 
-鉴权、限流、超时表、CORS、Prometheus 本轮不上。健康检查 `GET /health` 不进 `/api/v1`。
+业务路由组在上述中间件之后增加开发身份入口。身份默认关闭；显式启用时仅允许本机可信来源，见 `config.md`。限流、CORS、Prometheus 暂未接入。健康检查 `GET /health` 不进 `/api/v1`，不需要身份。
 
 ## Handle 写法
 

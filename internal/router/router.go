@@ -13,8 +13,8 @@ import (
 //  2. Trace：后面日志和响应信封都要 trace_id，必须在 Logger / handle 之前；
 //  3. Logger：必须在业务 handler 之后看到最终状态码，所以放 Use 链里、在 c.Next() 后打日志。
 //
-// 本轮不挂鉴权、限流、超时表、CORS、Prometheus。要加先改 docs/engineering/decisions.md。
-func NewEngine(healthHandler *v1.HealthHandler, conversationHandler *v1.ConversationHandler) *gin.Engine {
+// devUserID 为空时，业务接口保持未认证；健康检查始终开放。
+func NewEngine(healthHandler *v1.HealthHandler, conversationHandler *v1.ConversationHandler, devUserID string) *gin.Engine {
 	// ReleaseMode 关掉 Gin 自带的 debug 路由打印，访问日志只走我们的 console/zap 封装。
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.New()
@@ -31,10 +31,15 @@ func NewEngine(healthHandler *v1.HealthHandler, conversationHandler *v1.Conversa
 	r.GET("/health", healthHandler.Check)
 
 	api := r.Group("/api/v1")
+	api.Use(middleware.DevIdentity(devUserID))
 	{
 		conversations := api.Group("/conversations")
 		{
 			conversations.GET("", conversationHandler.List)
+			conversations.POST("", conversationHandler.Create)
+			conversations.GET("/:id", conversationHandler.Get)
+			conversations.PATCH("/:id", conversationHandler.Rename)
+			conversations.DELETE("/:id", conversationHandler.Delete)
 		}
 	}
 

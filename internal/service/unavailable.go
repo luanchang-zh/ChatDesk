@@ -50,7 +50,7 @@ func (UnavailableProjects) Delete(context.Context, string) error {
 }
 
 // UnavailableConversations 会话服务占位。
-// GET /api/v1/conversations 当前会打到这里，handle 再把它映射成 HTTP 500 + code 30002。
+// HTTP 启动已注入真实仓储；这个类型留给测试或尚未接库的调用方。
 type UnavailableConversations struct{}
 
 func (UnavailableConversations) Create(context.Context, domain.CreateConversationInput) (*domain.Conversation, error) {

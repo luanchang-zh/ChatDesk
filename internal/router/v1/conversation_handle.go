@@ -7,6 +7,7 @@ import (
 	"github.com/luanchang-zh/ChatDesk/internal/middleware"
 	"github.com/luanchang-zh/ChatDesk/internal/service"
 	"github.com/luanchang-zh/ChatDesk/pkg/result"
+	"net/http"
 )
 
 // ConversationHandler 会话 HTTP 入口。
@@ -31,7 +32,6 @@ type conversationItem struct {
 }
 
 // List 列出会话。
-// 当前 service 仍是占位，会返回 CodeServiceUnavailable；接上存储后这个函数不用改签名。
 // @Router GET /api/v1/conversations
 func (h *ConversationHandler) List(c *gin.Context) {
 	// 1. 绑定查询参数。用 ShouldBindQuery，失败时由我们自己写信封，而不是让 Gin 直接 400。
@@ -45,7 +45,7 @@ func (h *ConversationHandler) List(c *gin.Context) {
 	// 2. 从 Gin 抽出带 trace_id 的标准 context。service 禁止接收 *gin.Context。
 	ctx := middleware.NewContextWithGin(c)
 
-	// 3. 调用领域服务。UserID 等鉴权接上后再从 ctx 填入，现在先空着。
+	// 身份由中间件写入 ctx，不能从请求参数获取。
 	items, err := h.conversations.List(ctx, domain.ListConversationsInput{
 		ProjectID: req.ProjectID,
 	})
@@ -60,6 +60,66 @@ func (h *ConversationHandler) List(c *gin.Context) {
 		out = append(out, toConversationItem(item))
 	}
 	result.Success(c, gin.H{"items": out})
+}
+
+// Create 新建会话。
+// @Router POST /api/v1/conversations
+func (h *ConversationHandler) Create(c *gin.Context) {
+	// JSON 体限制 64KiB，避免把超大 payload 读进内存再报参数错误。
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 64<<10)
+	var req CreateConversationRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		result.Fail(c, nil, consts.CodeParamError)
+		return
+	}
+	item, err := h.conversations.Create(middleware.NewContextWithGin(c), domain.CreateConversationInput{
+		Title: req.Title, ProjectID: req.ProjectID,
+	})
+	if err != nil {
+		handleServiceError(c, err)
+		return
+	}
+	result.Success(c, toConversationItem(*item))
+}
+
+// Get 打开单个会话。路径 ID 非法由 service 返回参数错误。
+// @Router GET /api/v1/conversations/:id
+func (h *ConversationHandler) Get(c *gin.Context) {
+	item, err := h.conversations.Get(middleware.NewContextWithGin(c), c.Param("id"))
+	if err != nil {
+		handleServiceError(c, err)
+		return
+	}
+	result.Success(c, toConversationItem(*item))
+}
+
+// Rename 修改标题，不能改归属。
+// @Router PATCH /api/v1/conversations/:id
+func (h *ConversationHandler) Rename(c *gin.Context) {
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 64<<10)
+	var req RenameConversationRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		result.Fail(c, nil, consts.CodeParamError)
+		return
+	}
+	item, err := h.conversations.Rename(middleware.NewContextWithGin(c), domain.RenameConversationInput{
+		ID: c.Param("id"), Title: req.Title,
+	})
+	if err != nil {
+		handleServiceError(c, err)
+		return
+	}
+	result.Success(c, toConversationItem(*item))
+}
+
+// Delete 删除当前用户会话。成功时 data 为 null。
+// @Router DELETE /api/v1/conversations/:id
+func (h *ConversationHandler) Delete(c *gin.Context) {
+	if err := h.conversations.Delete(middleware.NewContextWithGin(c), c.Param("id")); err != nil {
+		handleServiceError(c, err)
+		return
+	}
+	result.Success(c, nil)
 }
 
 // toConversationItem 时间统一转 UTC RFC3339，前后端时区才不会各说各话。

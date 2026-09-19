@@ -44,7 +44,7 @@ func WithTraceID(ctx context.Context, traceID string) context.Context {
 	return with(ctx, KeyTraceID, traceID)
 }
 
-// WithUserUUID 写入当前用户。鉴权中间件接上后再调；现在骨架里通常还是空的。
+// WithUserUUID 写入当前用户。开发身份中间件注入；空串表示未认证。
 func WithUserUUID(ctx context.Context, userUUID string) context.Context {
 	return with(ctx, KeyUserUUID, userUUID)
 }

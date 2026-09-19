@@ -3,7 +3,7 @@ package domain
 import "time"
 
 // 本包只放业务含义上的对象，不依赖 Gin、数据库驱动、json tag。
-// HTTP 层自己准备 DTO；仓储层下一轮再映射到 sqlc 行。
+// HTTP 层准备 DTO；仓储层负责映射 sqlc 行。
 // 不要在这里加 form / json tag：线格式一变，领域对象不该跟着变。
 
 // Project 一次工作的范围。
@@ -43,16 +43,14 @@ type Conversation struct {
 	UpdatedAt time.Time
 }
 
-// CreateConversationInput 新建会话。Title 可空，由后续首条消息再命名。
+// CreateConversationInput 新建会话。Title 可空，默认“新会话”；身份来自 Context。
 type CreateConversationInput struct {
-	UserID    string
 	ProjectID string
 	Title     string
 }
 
-// ListConversationsInput 列表过滤。UserID 留给鉴权，ProjectID 来自查询参数。
+// ListConversationsInput 列表过滤。用户归属始终从可信 Context 读取。
 type ListConversationsInput struct {
-	UserID    string
 	ProjectID string
 }
 
