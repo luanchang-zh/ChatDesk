@@ -8,5 +8,6 @@
 | [http-gin.md](./http-gin.md) | Gin 编排、handle 职责、中间件顺序 |
 | [error-handling.md](./error-handling.md) | 业务码、result.Fail / FailServer |
 | [logging.md](./logging.md) | logger.WithCtx / logger.Error 用法 |
+| [config.md](./config.md) | 环境变量：HTTP / DSN / 日志级别 |
 
 产品需求、技术栈、系统架构仍在 `docs/total/`。这里只补「代码怎么写、为什么不能改回去」。

@@ -22,7 +22,8 @@
 下游错误不要在每个 handle 里自己 `switch`，走 `handleServiceError`：
 
 - `consts.IsNonServerError(apperr.Code(err))` → `Fail`
-- 其它 → `FailServer`，HTTP 500，错误进 `c.Errors`
+- 已有的服务端码（30002、30003）→ `FailServer` 原样返回
+- 其它未知错误 → `FailServer`，`CodeInternalError`
 
 ## 业务码
 

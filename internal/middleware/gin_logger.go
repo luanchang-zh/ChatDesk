@@ -8,12 +8,23 @@ import (
 	"go.uber.org/zap"
 )
 
-// GinLogger 请求结束后打一条访问日志。
-// /health 成功不打，避免探活刷屏；5xx 或业务码 >= 30000 走 Error。
+// GinLogger 在请求结束后打一条聚合访问日志。
+//
+// 级别规则：
+//   - /health 且未 5xx：不打，避免探活刷屏；
+//   - HTTP 5xx 或业务码 >= 30000：Error（服务端问题）；
+//   - 耗时超过 2s：Warn（还成功，但慢）；
+//   - 其余（含参数错误 1xxxx）：Info。参数输错是正常流量，不能记 Error。
+//
+// 必须放在 Recovery / Trace 之后：
+//  1. Recovery 可能改写状态码；
+//  2. Trace 已经把 trace_id 放进 context，这条日志才能对上信封。
 func GinLogger() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		start := time.Now()
 		path := c.Request.URL.Path
+
+		// c.Next 跑完整个 handler 链；日志必须在这之后打，才能拿到最终状态码和业务码。
 		c.Next()
 
 		if IsPlatformPath(path) && c.Writer.Status() < 500 {
@@ -31,6 +42,8 @@ func GinLogger() gin.HandlerFunc {
 			logger.Duration("cost", cost),
 		}
 
+		// result.Fail / FailServer 会把业务码塞进 gin.Context。
+		// 拿不到就当 0：成功路径本来就没有 business_code。
 		businessCode := 0
 		if code, exists := c.Get("business_code"); exists {
 			if bc, ok := code.(int); ok && bc > 0 {
@@ -39,6 +52,7 @@ func GinLogger() gin.HandlerFunc {
 			}
 		}
 
+		// FailServer 把 upstreamErr 挂进 c.Errors。只取第一条，避免一次请求打出一串重复错误。
 		if len(c.Errors) > 0 {
 			for _, ge := range c.Errors {
 				if ge.Err == nil {

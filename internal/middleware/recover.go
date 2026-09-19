@@ -13,8 +13,15 @@ import (
 	"github.com/luanchang-zh/ChatDesk/pkg/result"
 )
 
-// GinRecovery 拦住 panic，避免进程退出。
-// 客户端断开（broken pipe）只记 Warn 并中止；其它 panic 记 Error 后返回内部错误。
+// GinRecovery 拦住 handler / 中间件里的 panic，避免整个进程退出。
+//
+// 必须挂在 Use 链最前面：后面 Trace / Logger / handle 任何一层炸了都要能接住。
+//
+// 两种情况：
+//  1. 客户端已经断开（broken pipe / connection reset）：再写响应也没用，只记 Warn 然后 Abort；
+//  2. 其它 panic：记 Error（带 top_frame 方便定位），再返回内部错误信封。
+//
+// 不要把 panic 原文写进信封 message，里面可能有内部路径。
 func GinRecovery() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		defer func() {
@@ -48,6 +55,8 @@ func GinRecovery() gin.HandlerFunc {
 	}
 }
 
+// isBrokenPipe 判断 panic 是否只是对端把 TCP 掐了。
+// 浏览器刷新、客户端超时取消，写响应时经常炸这个，不是我们的 bug，不能当 Error。
 func isBrokenPipe(recovered any) bool {
 	ne, ok := recovered.(*net.OpError)
 	if !ok {

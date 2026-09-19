@@ -3,7 +3,10 @@
 ## 目录
 
 ```text
-cmd/server/main.go              启动、信号、Shutdown
+cmd/server/main.go              启动、读配置、信号、Shutdown
+internal/config/                环境变量
+internal/domain/                项目 / 会话 / 消息 / 运行
+internal/service/               领域服务接口与占位实现
 internal/router/router.go       gin.New、中间件、路由组
 internal/router/v1/*_handle.go  一个资源一个 handle 文件
 internal/middleware/            Recovery / Trace / 访问日志
@@ -27,11 +30,11 @@ internal/middleware/            Recovery / Trace / 访问日志
 
 1. `ShouldBindJSON` / `ShouldBindQuery`（不要用 `BindJSON`，它会自己写 400）
 2. `ctx := middleware.NewContextWithGin(c)`
-3. 调服务（本轮没有服务就返回业务码）
+3. 调服务（`ctx` 用 `middleware.NewContextWithGin`，不要传 `*gin.Context`）
 4. `result.Success` 或 `handleServiceError`
 
 禁止：
 
 - 把 `*gin.Context` 传入 service
-- handler 里直接打数据库或 Python
+- handler 里直接打数据库或直接调 Python 进程
 - 在 handler 里拼 `gin.H{"error": ...}` 绕过 `pkg/result`

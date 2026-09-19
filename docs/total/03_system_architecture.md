@@ -1,15 +1,16 @@
 # 个人 AI Workspace｜总体架构
 
-> 文档版本：1.2  
+> 文档版本：1.3  
 > 文档定位：只描述系统的大体架构、模块边界与核心数据流。  
 > 本文不讨论数据库表、字段、详细接口、状态机或具体实现细节。  
-> 1.2 变更：取消 M0～M4 分期；图谱纳入主体架构，仍作为知识工人内部模块。
+> 1.2 变更：取消 M0～M4 分期；图谱纳入主体架构，仍作为 Python 进程内部模块。  
+> 1.3 变更：写明非基础设施进程只有 Go 和 Python，整体不是微服务。
 
 ---
 
 ## 1. 系统定位
 
-项目整体是一个以 Go 为核心的个人 AI Workspace。对浏览器只有一个后端。
+项目整体是一个以 Go 为核心的个人 AI Workspace。对浏览器只有一个 HTTP 入口。非基础设施进程只有 Go 和 Python，不是微服务。
 
 主要能力包括：
 
@@ -23,7 +24,7 @@ Knowledge Graph
 Web Search
 ```
 
-Go Backend 是唯一产品控制面。Python 知识工人是内部能力进程，不是第二个产品后端。Neo4j 是图存储。Agent 属于 P1，Sandbox 属于 P2，都不进入当前主体架构。
+Go 进程是唯一产品控制面。Python 进程做知识加工与本地知识检索，不对浏览器暴露。Neo4j、PostgreSQL 是基础设施，不是第三个产品进程。Agent 属于 P1，Sandbox 属于 P2，都不进入当前主体架构。
 
 ---
 
@@ -32,7 +33,7 @@ Go Backend 是唯一产品控制面。Python 知识工人是内部能力进程�
 ```mermaid
 flowchart TB
     User[Web Frontend]
-    User --> Go[Go AI Backend]
+    User --> Go[Go 进程]
 
     Go --> Conv[Conversation / Project / Run]
     Go --> Context[Context Engine]
@@ -40,12 +41,12 @@ flowchart TB
     Go --> Retrieval[Retrieval Layer]
 
     Retrieval --> Direct[Direct Search]
-    Retrieval --> Worker[Python 知识工人]
+    Retrieval --> Py[Python 进程]
     Retrieval --> Web[Web Search]
 
-    Worker --> Parse[Parse / Normalize]
-    Worker --> RAG[RAG Index]
-    Worker --> Graph[Graph Module]
+    Py --> Parse[Parse / Normalize]
+    Py --> RAG[RAG Index]
+    Py --> Graph[Graph Module]
 
     Direct --> Corpus[Normalized Text]
     Parse --> Corpus
@@ -58,7 +59,7 @@ flowchart TB
     Go --> Files[File Storage]
 ```
 
-前端只访问 Go。Go 在需要语义检索或图谱时调用知识工人；精确搜索读标准化文本；联网搜索留在 Go 内。
+前端只访问 Go 进程。Go 在需要语义检索或图谱时本机调用 Python 进程；精确搜索读标准化文本；联网搜索留在 Go 内。
 
 ---
 
@@ -68,13 +69,13 @@ flowchart TB
 ┌──────────────────────────────────┐
 │          Web Frontend            │
 ├──────────────────────────────────┤
-│       Go Application Layer       │  ← 唯一对外 API
+│       Go Application Layer       │  ← 唯一对浏览器暴露
 ├──────────────────────────────────┤
-│   AI Orchestration / Context     │  ← Go + Eino
+│   AI Orchestration / Context     │  ← Go 进程内 + Eino
 ├──────────────────────────────────┤
-│ Retrieval / Knowledge Worker     │  ← Direct / Web 在 Go；RAG / Graph 在 Python
+│ Retrieval / Python 进程          │  ← Direct / Web 在 Go；RAG / Graph 在 Python
 ├──────────────────────────────────┤
-│ Data / Model / External Services │
+│ Data / Model / Infrastructure    │
 └──────────────────────────────────┘
 ```
 
@@ -110,16 +111,16 @@ Retrieval Planner
 Citation 校验
 ```
 
-### Retrieval / Knowledge Worker
+### Retrieval / Python 进程
 
 ```text
 Direct Search     （Go，标准化文本）
 Web Search        （Go）
-Parse / RAG       （Python 知识工人）
-Graph Query       （Python 知识工人）
+Parse / RAG       （Python 进程）
+Graph Query       （Python 进程）
 ```
 
-### Data / External Services
+### Data / Infrastructure
 
 ```text
 PostgreSQL + pgvector
@@ -140,8 +141,8 @@ flowchart LR
     Query[User Query] --> Planner[Retrieval Planner]
 
     Planner --> Direct[Direct Search]
-    Planner --> RAG[RAG via Worker]
-    Planner --> Graph[Graph via Worker]
+    Planner --> RAG[RAG via Python]
+    Planner --> Graph[Graph via Python]
     Planner --> Web[Web Search]
 
     Direct --> Evidence[Evidence]
@@ -206,13 +207,13 @@ Context Engine 负责控制最终送给模型的信息。超长时优先保住�
 ```mermaid
 flowchart TB
     Upload[Go: 保存原始文件并登记版本]
-    Upload --> Job[Go: 请求知识工人 index]
-    Job --> Parse[Worker: Parse / Normalize]
+    Upload --> Job[Go: 请求 Python 进程 index]
+    Job --> Parse[Python: Parse / Normalize]
     Parse --> Text[Normalized Text in FileStore]
 
     Text --> Direct[Go: Direct Search Index]
-    Text --> RAG[Worker: RAG Index]
-    Text --> KG[Worker: Graph Build]
+    Text --> RAG[Python: RAG Index]
+    Text --> KG[Python: Graph Build]
 
     RAG --> Vector[(pgvector)]
     KG --> Neo4j[(Neo4j)]
@@ -234,11 +235,13 @@ flowchart TB
 
 ### 6.2 进程边界
 
+这里是同一个产品里的两个进程分工，不是两个可独立对外的微服务。
+
 ```text
-Go
+Go 进程
 → 文档 ID、所属用户、版本、原始文件、产品状态机
 
-知识工人
+Python 进程
 → 读原始文件，写标准化文本，建语义 / 图谱索引，按 ID 检索
 
 双方
@@ -249,7 +252,7 @@ Go
 
 ## 7. Eino 的位置
 
-Eino 位于 Go Backend 内部的 AI Runtime 层。
+Eino 位于 Go 进程内部的 AI Runtime 层。
 
 ```text
 Go Business
@@ -285,12 +288,12 @@ Web Retrievers
 
 ---
 
-## 9. 知识工人内部
+## 9. Python 进程内部
 
 ```text
-Go Backend
-    ↓
-Python 知识工人（一个进程）
+Go 进程
+    ↓ 本机调用
+Python 进程
     ├── Parse / Docling
     ├── RAG / LlamaIndex / pgvector
     └── Graph / neo4j-graphrag / Neo4j
@@ -303,7 +306,7 @@ RAG 只负责语义检索，不负责 Chat 或最终回答。Graph 只负责有�
 ## 10. Web Search 架构
 
 ```text
-Go Backend
+Go 进程
     ↓
 Web Search Adapter（Tavily）
     ↓
@@ -326,7 +329,7 @@ Go：Conversation / Run
 Retrieval Planner
  ↓
 Direct（本地标准化文本）
-RAG / Graph（知识工人）
+RAG / Graph（Python 进程）
 Web（若已授权）
  ↓
 Evidence Fusion + Citation 校验
@@ -349,7 +352,7 @@ Conversation Persistence
 ```text
                      React
                        ↓
-                 Go AI Backend     ← 唯一产品后端
+                 Go 进程           ← 唯一对浏览器暴露
                        │
           ┌────────────┼────────────┐
           ↓            ↓            ↓
@@ -360,7 +363,7 @@ Conversation Persistence
                          │
         ┌────────┬───────┼────────┐
         ↓        ↓       ↓        ↓
-      Direct   Worker   Web     （Sandbox 不在当前图）
+      Direct   Python   Web     （Sandbox 不在当前图）
                  │
           Parse / RAG
           Graph
@@ -370,6 +373,6 @@ Conversation Persistence
 
 核心原则：
 
-1. **对用户只有一个后端；实现上是 Go + 一个 Python 知识工人。**
+1. **对用户只有一个 HTTP 入口；非基础设施进程只有 Go 和 Python，不是微服务。**
 2. **Eino 是编排组件，LlamaIndex / Neo4j 不接管 Chat。**
 3. **Direct、RAG、Graph、Web 可组合，但都消费明确的证据，并进入同一个 Context Engine。**

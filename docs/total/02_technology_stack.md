@@ -1,38 +1,41 @@
 # 个人 AI Workspace｜技术选型与依赖
 
-> 文档版本：1.2  
+> 文档版本：1.3  
 > 文档定位：只说明项目采用什么技术、框架和基础依赖，以及各自负责什么。  
-> 核心目标：一个 Go 产品后端 + 一个 Python 知识工人；四路检索（Direct / RAG / Graph / Web）由 Go 调度；Sandbox 属于 P2，不在当前栈。  
-> 1.2 变更：取消 M0～M4 分期；图谱与 Neo4j 纳入当前技术栈，仍在同一知识工人进程内。
+> 核心目标：非基础设施进程只有 Go 和 Python，不是微服务；四路检索（Direct / RAG / Graph / Web）由 Go 调度；Sandbox 属于 P2，不在当前栈。  
+> 1.2 变更：取消 M0～M4 分期；图谱与 Neo4j 纳入当前技术栈，仍在同一 Python 进程内。  
+> 1.3 变更：把 Go / Python 写成两个进程，把 PostgreSQL / Neo4j 等写成基础设施，避免读成微服务。
 
 ---
 
 ## 1. 总体技术路线
 
-对前端和用户，系统只有一个后端。实现上固定为两个进程：
+对前端和用户，系统只有一个 HTTP 入口。非基础设施进程固定为两个——Go 和 Python——这不是微服务。
+
+PostgreSQL、Neo4j、本地文件目录、LLM Provider、Tavily 是基础设施或外部依赖，不计入这两个进程。
 
 ```text
 Web Frontend
     ↓
-Go Backend          ← 唯一产品 API
+Go 进程             ← 唯一对浏览器暴露
     ├── Eino：LLM 接入与 Workflow 编排
     ├── Direct Search：对标准化文本做精确搜索
     ├── Web Search：联网检索
-    └── Knowledge Worker Client
+    └── 本机调用 Python 进程
             ↓
-      Python 知识工人
+      Python 进程
             ├── Parse / Normalize
             ├── RAG（LlamaIndex + pgvector）
-            └── Graph（同一进程，不另起服务）
+            └── Graph（同一进程内的模块，不另起进程）
 ```
 
-Go 掌握会话、上下文、检索调度、证据融合、工具权限和最终回答生成。Python 只做知识加工与本地知识检索，不对外提供产品 API，也不负责 Chat。
+Go 掌握会话、上下文、检索调度、证据融合、工具权限和最终回答生成。Python 只做知识加工与本地知识检索，不对浏览器暴露，也不负责 Chat。
 
 普通 RAG **不采用 RAGFlow**。本项目不需要它自带的 Chat、Agent、复杂工作台和完整知识库平台。
 
-不把解析、RAG、图谱拆成三个 FastAPI。它们操作的是同一份标准化文本，拆开只会让文件和版本对不齐。
+不把解析、RAG、图谱拆成三个进程。它们操作的是同一份标准化文本，拆开只会让文件和版本对不齐。
 
-Neo4j 是图存储，不是第三个后端。Sandbox 属于 P2，不是当前技术栈的一部分。
+Neo4j 是图存储，不是第三个产品进程。Sandbox 属于 P2，不是当前技术栈的一部分。
 
 ---
 
@@ -69,11 +72,11 @@ react-markdown
 Cytoscape.js
 ```
 
-前端不直接访问模型、Python 知识工人、Neo4j、pgvector 或 Web Search Provider。所有能力统一经过 Go Backend。
+前端不直接访问模型、Python 进程、Neo4j、pgvector 或 Web Search Provider。所有能力统一经过 Go 进程。
 
 ---
 
-## 3. Go 主后端
+## 3. Go 进程
 
 采用：
 
@@ -90,7 +93,7 @@ OpenTelemetry
 
 HTTP 框架选定 **Gin**：资料多，个人项目开发更快。不再并行维护 Chi。
 
-Go Backend 负责：
+Go 进程负责：
 
 ```text
 用户与权限
@@ -108,7 +111,7 @@ Tool Registry
 Workflow / P1 Agent Runtime
 SSE
 Trace
-Knowledge Worker 调用
+调用 Python 进程
 ```
 
 普通问答使用固定 Retrieval Workflow。Agent Loop 属于 P1，不作为完整首版的前置依赖。
@@ -143,7 +146,7 @@ Conversation 持久化
 向量存储
 ```
 
-项目自身定义 Model、Tool、Retriever 等业务接口，在内部通过 Eino 适配实际模型。Go 的 Retriever 接口既可走本地 Direct / Web，也可调用 Python 知识工人；上层 Planner 不感知 LlamaIndex 或 Neo4j。
+项目自身定义 Model、Tool、Retriever 等业务接口，在内部通过 Eino 适配实际模型。Go 的 Retriever 接口既可走本地 Direct / Web，也可调用 Python 进程；上层 Planner 不感知 LlamaIndex 或 Neo4j。
 
 建议支持至少：
 
@@ -157,9 +160,11 @@ DeepSeek / Qwen 等兼容 Provider
 
 ---
 
-## 5. Python 知识工人
+## 5. Python 进程
 
-一个 FastAPI 进程，内部是知识作业流水线，不是“RAG 微服务”或“Graph 微服务”。
+第二个非基础设施进程。内部是知识作业流水线：解析、RAG、图谱都在这一个进程里。
+
+FastAPI 只是 Go 在本机调用它的方式，不是对外产品 API，也不是按能力拆开的微服务。
 
 采用：
 
@@ -173,14 +178,21 @@ neo4j-graphrag
 Neo4j
 ```
 
-当前就要启动的依赖是：Go、Python 知识工人、PostgreSQL、Neo4j。图谱与语义检索共用一个知识工人进程。
+当前要跑起来的东西分成两类：
+
+```text
+非基础设施进程：Go、Python
+基础设施：PostgreSQL、Neo4j、本地文件目录
+```
+
+图谱与语义检索共用这一个 Python 进程。
 
 ### 5.1 为什么保留 Python
 
 本项目真正想练的是：
 
 ```text
-Go AI Backend
+Go 进程
 Retrieval Planner
 Context Engineering
 会话系统
@@ -197,9 +209,9 @@ Rerank Adapter
 实体关系抽取流水线
 ```
 
-LlamaIndex 和 Docling 只作为知识工人内部的薄层。Chat、权限、最终回答不交给它们。
+LlamaIndex 和 Docling 只作为 Python 进程内部的薄层。Chat、权限、最终回答不交给它们。
 
-### 5.2 知识工人负责
+### 5.2 Python 进程负责
 
 ```text
 读取原始文件
@@ -212,7 +224,7 @@ Vector Retrieval
 实体关系抽取与图查询
 ```
 
-对 Go 只暴露内部接口，例如：
+对 Go 只提供本机调用入口，例如：
 
 ```text
 POST /index
@@ -234,13 +246,13 @@ Go 传入文档 ID、用户范围和版本，不让 Python 自己决定产品权
 
 建议分 schema：Go 业务数据与知识向量分开，避免混表。个人项目不额外部署独立 Vector Database。
 
-如果以后数据量明显增大，可以替换为 Qdrant；Go 上层仍然只调用知识工人，不感知具体 Vector Store。
+如果以后数据量明显增大，可以替换为 Qdrant；Go 上层仍然只调用 Python 进程，不感知具体 Vector Store。
 
 ---
 
 ## 6. 文档解析
 
-解析是知识工人的第一段作业，不是独立服务。
+解析是 Python 进程的第一段作业，不是第三个进程。
 
 P0 支持：
 
@@ -276,7 +288,7 @@ Direct Search 用于解决：
 代码符号
 ```
 
-语料是知识工人写出的**标准化文本**，不是原始 PDF 二进制，也不是宿主机任意目录。
+语料是 Python 进程写出的**标准化文本**，不是原始 PDF 二进制，也不是宿主机任意目录。
 
 实现上由 Go 通过受限参数调用：
 
@@ -302,7 +314,7 @@ Document / Chunk Location
 
 ## 8. 知识图谱
 
-图谱是知识工人内部的模块，沿用同一 FastAPI 进程和同一份标准化文本。不另起服务。
+图谱是 Python 进程内部的模块，沿用同一进程和同一份标准化文本。不另起进程。
 
 采用：
 
@@ -324,7 +336,7 @@ Multi-hop Retrieval
 Graph → Source Chunk 回溯
 ```
 
-Go 只通过统一 GraphRetriever 调用知识工人。图谱失败不得阻断 Direct / RAG。
+Go 只通过统一 GraphRetriever 调用 Python 进程。图谱失败不得阻断 Direct / RAG。
 
 Neo4j 主要保存：
 
@@ -412,7 +424,7 @@ Citation
 Trace Metadata
 ```
 
-知识工人保存：
+Python 进程保存：
 
 ```text
 Chunk
@@ -431,11 +443,11 @@ Python：仅访问知识 schema，不写会话表
 
 ## 11. 文件存储
 
-个人开发阶段使用本地目录，Go 与知识工人挂载同一数据卷：
+个人开发阶段使用本地目录，Go 与 Python 进程挂载同一数据卷：
 
 ```text
 /data/documents     原始文件，Go 写入
-/data/normalized    标准化文本，知识工人写入
+/data/normalized    标准化文本，Python 进程写入
 /data/artifacts     可选产物
 ```
 
@@ -451,8 +463,8 @@ FileStore Interface
 
 ```text
 Go 写入原始文件并登记文档版本
-Go 请求知识工人 index
-知识工人读取原始文件，写出标准化文本，再建 RAG / 图谱索引
+Go 请求 Python 进程 index
+Python 进程读取原始文件，写出标准化文本，再建 RAG / 图谱索引
 Direct Search 只扫描标准化文本
 ```
 
@@ -504,7 +516,7 @@ Token Usage
 Retrieval latency
 Retriever route
 Retrieved Evidence
-Knowledge Worker job status
+Python 作业状态
 Tool latency
 Errors
 ```
@@ -515,9 +527,9 @@ Errors
 
 ## 14. Sandbox（P2，不在当前栈）
 
-主体完成前不引入独立执行服务。本文保留约束，避免以后范围漂移。
+主体完成前不引入第三个执行进程。本文保留约束，避免以后范围漂移。
 
-若启用，必须与 Go 主服务分离，只提供一种预置语言（Python 或 Go），不提供不受限 Shell。
+若启用，必须与 Go / Python 这两个进程分开，只提供一种预置语言（Python 或 Go），不提供不受限 Shell。
 
 基本限制：
 
@@ -540,7 +552,7 @@ Frontend
 ├── react-markdown
 └── Cytoscape.js
 
-Go Backend
+Go 进程
 ├── Go
 ├── Gin
 ├── Eino
@@ -548,13 +560,13 @@ Go Backend
 ├── ripgrep（Direct Search）
 └── Tavily（Web Search，默认关闭）
 
-Python 知识工人
-├── FastAPI
+Python 进程
+├── FastAPI（仅供 Go 本机调用）
 ├── Docling
 ├── LlamaIndex
 └── neo4j-graphrag
 
-Database / Storage
+基础设施
 ├── PostgreSQL + pgvector
 ├── Neo4j
 └── 本地 FileStore
@@ -567,20 +579,20 @@ Agent Loop 属于 P1，不进入当前默认依赖。Sandbox 属于 P2，不进�
 ## 16. 技术边界总结
 
 ```text
-Go Backend
-→ 唯一产品后端：会话、权限、Planner、Context、Citation、SSE
+Go 进程
+→ 唯一对浏览器暴露：会话、权限、Planner、Context、Citation、SSE
 
 Eino
 → Go 进程内的 LLM 与 Workflow
 
-Python 知识工人
+Python 进程
 → 解析、语义索引、图谱；不对浏览器暴露
 
 LlamaIndex / Docling
-→ 知识工人内部库，不接管 Chat
+→ Python 进程内部库，不接管 Chat
 
 Neo4j
-→ 图存储，不是后端
+→ 图存储，是基础设施，不是产品进程
 
 ripgrep
 → 只搜标准化文本
@@ -589,7 +601,7 @@ Tavily
 → 只负责互联网搜索结果；正文读取由 Go 完成
 ```
 
-因此项目不会变成某个 AI 框架的套壳，也不会膨胀成一串微服务。
+因此项目不会变成某个 AI 框架的套壳，也不会膨胀成微服务。非基础设施进程始终只有 Go 和 Python。
 
 真正由项目自身实现的核心仍然是：
 
